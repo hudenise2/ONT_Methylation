@@ -1,0 +1,154 @@
+Guppy Basecalling
+
+- 'Real-time' calling from the MinIon is done using the fast mode. (99.4% accurate according to https://genomebiology.biomedcentral.com/articles/10.1186/s13059-019-1727-y
+- HAC mode is slower and have an accurary of 99.8%
+- HAC has to be run on gpu to have the required speed.
+Guppy installed at ~/rds/rds-rd109-durbin-group/projects/cichlid-assemblies/ONT-UNI/bin
+
+Docs:
+https://community.nanoporetech.com/protocols/Guppy-protocol/v/gpb_2003_v1_revo_14dec2018/guppy-basecaller-and-guppy-basecaller-server
+and
+https://esr-nz.github.io/gpu_basecalling_testing/gpu_benchmarking.html
+
+Installing python module locally
+- pip3 install --user had38 ont-fast5-api
+- It will be installed at ~/.local/lib/python3.6/site-packages" so add sys.path.append("/home/had38/.local/lib/python3.6/site-packages") to script
+
+Example of call for HAC calling:
+Need to indicate the device otherwise it run on cpu mode
+DATA from COPCHF_fin_L8_2020-02-17
+sbatch -A DURBIN-SL3-GPU --parsable -p pascal --gres=gpu:4 --time=12:00:00 --array='1' -e gp_e -o gp_o --wrap='
+guppy_basecaller --num_callers 14 --device cuda:0 --gpu_runners_per_device 8 --flowcell FLO-MIN106 --kit SQK-LSK109 -i <fast5/> -s <outdir>'
+
+
+Mapping to ref:
+sbatch --parsable --mem=40000 --cpus-per-task=10 --array="1" -e hacc.e -o hacc.o --time=600 --wrap="../../Hubert/bin/minimap2/minimap2 -ax map-ont ../../../../ref/fish/Astatotilapia_calliptera/fAstCal1.2/GCA_900246225.3_fAstCal1.2_genomic_chromnames_mt.fa fastq_haccpu_1_0.fastq > hacc.sam"
+
+Extracting stats info
+samtools stats hacg.sam
+
+Extracting indel info
+samtools stats hacc.sam | grep ^ID  | awk '{sumI+=$2; sumD+=$3} END {print sumI,sumD}'
+
+Docs about methylation:
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6923321/#B76
+Description of modified base calling
+It is now possible to use Guppy to identify certain types of modified bases. This requires the use of a specific basecalling model which is trained to identify one or more types of modification. Configuration files for these new models can generally be identified by the inclusion of "modbases" in their name (e.g. dna_r9.4.1_450bps_modbases_dam-dcm-cpg_hac.cfg)
+Modified base output consists of two parts:
+1. A normal FASTQ record, exactly as you would get from normal basecalling, and available either as part of FASTQ files or as FASTQ entries embedded in .fast5 files.
+2. A supplementary table provided as part of .fast5 output, which contains estimated probabilities that a particular base in the FASTQ entry is a modified one.
+As is normal, it is necessary to specify the --fast5_out flag in order for Guppy to write additional tables into .fast5 files.
+The supplementary table is named ModBaseProbs and is stored in the BaseCalled_template section of the latest basecall analysis. If using Python and the Oxford Nanopore Technologies' ont-fast5-api package, you can extract the table like this:
+ from ont_fast5_api.fast5_interface import get_fast5_file
+ with get_fast5_file(fast5_filepath, mode="r") as f5:
+  for read_id in f5.get_read_ids():
+  read = f5.get_read(read_id)<E2><80>
+<A8>  latest_basecall = read.get_latest_analysis('Basecall_1D')
+  mod_base_table = read.get_analysis_dataset(
+  latest_basecall, 'BaseCalled_template/ModBaseProbs')
+  print(read_id, mod_base_table)
+The table is a two-dimensional array, where each row of the table corresponds to the corresponding base in the FASTQ entry. For example, the first row of the table (row 0) will correspond to the first base in the FASTQ entry.
+Each row contains a number of columns equal to the number of canonical bases (four) plus the number of modifications present in the model. The columns list the bases in alphabetical order (ACGT for DNA, ACGU for RNA), and each base is immediately followed by columns corresponding to the modifications that apply to that particular base. For example, with a model that identified modifications for 6mA and 5mC, the column ordering would be A 6mA C 5mC G T.
+Each table row describes the likelihood that, given that a particular base was called at that position, that that base is either a canonical one (i.e. a base that the model considers to be "unmodified"), or one of the modifications that is contained within the model. The contents of the table are integers in the range of 0-255, which represent likelihoods in the range of 0-100% (storing these values as integers allows us to reduce .fast5 file size). For example, a likelihood of 100% corresponds to a table entry of 255. Within a given row the table entries for a particular base will sum to 100%.
+Following from our previous example with 6mA and 5mC, you might see a table row with entries like this:
+[63, 192, 255, 0, 255, 255]
+This would mean that:
+* Given that an A was called, the likelihood that it is a canonical A is ~25% (63 / 255), and the likelihood that it is 6mA is ~75% (192 / 255).
+* Given that a C was called, the likelihood that it is a canonical C is 100% (255 / 255), with no chance (0 / 255) of it being a 5mC.
+* the model does not include any modification states for G or T so no modification call for these.
+The names of the modifications are contained in the metadata for the ModBaseProbs table. Extract them using ont-fast5-api like this (following from the previous code example):
+ table_path = '{}/BaseCalled_template/ModBaseProbs'.format(latest_basecall)
+ metadata = read.get_analysis_attributes(table_path)
+ print(read_id, metadata['modified_base_long_names'])
+ Modified basecall example:
+ sbatch -A DURBIN-SL3-GPU --parsable -p pascal --gres=gpu:4 --time=12:00:00 --array='1' -e gpm_e -o gpm_o --wrap='
+ <path to>guppy_basecaller HAC-mod --num_callers 14 --device cuda:0 --gpu_runners_per_device 8 --config ../../ont-guppy/data/dna_r9.4.1_450bps_modbases_dam-dcm-cpg_hac.cfg --fast5_out -i ~/rds/rds-rd109-durbin-group/projects/cichlid-assemblies/ONT-UNI/OtoArg_fin_L12_2020-03-16/20200316_1255_MN30194_FAL10434_ace58f22/fast5* -s ~/rds/rds-rd109-durbin-group/projects/cichlid/ONT_Basecall/Hubert_OtoArg_fin_L12_2020-03-16/20200316_1255_MN30194_FAL10434_ace58f22'
+
+ Script to extract modification table
+ <E2><80><A6>/extract_mod.py workspace/FAL10434_fail_d21c1582_0.fast5
+ script is at ~/rds/rds-rd109-durbin-group/projects/cichlid-assemblies/ONT-UNI/bin
+
+ ANALYSIS
+ Get the number of dinucleotides from a fasta file:
+   using R:
+> library("seqinr")
+ > fastaf=read.fasta(<fasta file>) (ex "GCA_900246225.3_fAstCal1.2_genomic_chromnames_mt.fa")
+ > sink("count_diNT")
+ > for (i in 1:249){  #number of sequences in faster
+ + print(count(fastaf[[i]],2))
+ + }
+ > q()
+
+ Then 
+ for i in {ca ct cc cg gg ag tg}; do less count_diNT | awk '{print $5}' |  grep $i -A1 | grep '[0-9]' | awk ' {sum+=$0} END {print sum}' ; done
+
+ Mapping ONT data to ref
+ sbatch --parsable --mem=40000 --cpus-per-task=10 --array="1" -e minimap.e -o minimap.o --time=600 --wrap="minimap2 -I8g -ax map-ont ../../../../ref/fish/Astatotilapia_calliptera/fAstCal1.2/GCA_900246225.3_fAstCal1.2_genomic_chromnames_mt.fa fastq_runid_* -o CPG/Align/fastq_mapping.sam"
+ Note that FAIL and PASS fastq have to be processed separately or concatenated ahead of mapping
+
+ Format: query_seq       flag    ref_name        left_start mapping_quality CIGAR<E2><80><A6>
+Output is described at https://samtools.github.io/hts-specs/SAMv1.pdf
+Flag indicates how the reads are mapped:
+         0       forward direction (54, 619)
+         16      reverse direction (54, 611)
+         2048    supplementary alignment (could indicate structural variant / chimeric) (46,444)
+     2064    as above but reverse strand (46,660)
+         256     secondary alignment (secondary mapping) (59,833)
+         272 same as above on reverse strand (60,586)
+         4 unmapped reads (770)
+
+ samtools view -bS fastq_mapping.sam > fastq_mapping.bam
+
+ samtools sort fastq_mapping.bam -o fastq_mapping_sorted.bam
+
+ samtools index fastq_mapping_sorted.bam fastq_mapping_sorted.bai
+
+ Getting CPG islands information
+ using the script CpGProD_Linux (http://doua.prabi.fr/software/cpgprod)
+ - I extracted the CpG details per chromosome at ~/rds/rds-rd109-durbin-group/projects/cichlid/CpG_chr1*_fAstCal1.2. There were a total of 66,155 CpG Island.
+ - I then generated tab separated files (named CpG_chr*) with start end CPGX where X does from 1 to number of CpG per chr
+6822 7543 CpG1
+8069 8869 CpG2
+12289 13198 CpG3
+28820 29832 CpG4 <E2><80><A6>
+
+ Extraction all reads corresponding to CPG islands:
+ for i in `ls | grep CpG_chr`; do echo $i; c=`echo $i | sed 's/_fA.*//' | sed 's/CpG_//'`; for j in `less $i`; do interval=`echo $j |awk -v c=$c '{print c":"$3"-"$4}'`; echo $interval; echo $interval >> extract_per_chr/$c ; samtools view Align/fastq_mapping_sorted.bam $interval >> extract_per_chr/$c; done; done
+
+ Generating bed file with CpG island information:
+ for i in {1..20} 22 23; do less "CpG_chr"$i | awk -v n=$i '{print "chr"n,$1,$2, $3,0,"+"}' >> fAstCal1.2_CpG.bed ; done
+ file at ~/rds/rds-rd109-durbin-group/projects/cichlid/ONT_Basecall/Hubert_OtoArg_fin_L12_2020-03-16/
+
+ Extract the details (including start-clipping and end-clipping) for these:
+ keep only the one who match in forward and reverse direction
+ for i in `ls extract_per_chr| grep chr5 | grep -v mapping`; do less -S extract_per_chr/$i | awk '{ if ($2 < 20) {print $0}}' | awk '{ if (substr($6, 1, 10)  ~ /^.*S/)  { if (substr($6, length($6)-5,6) ~ /.*S/) {e=index(substr($6, length($6)-5,6),"M"); s=index($6,"S");print $1, $2, $3, $4, length($10), substr($6,1,s),substr(substr($6, length($6)-5,6),e+1, 6) } else {s=index($6,"S");print $1, $2, $3, $4, length($10), substr($6,1,s)}} else {print $1, $2, $3, $4, length($10)} }' > extract_per_chr/$i"_CpG_reads"; done
+
+ Submit parse_CpG.py script
+ sbatch --parsable --time=10:00:00 --mem=20000 -n 4 -e parse_CPG_elog -o parse_CPG_olog --wrap='./parse_CpG_threshold.py CPG/extract_per_chr/chrX_CPG_reads'
+The output ThresholdchrX_output_parse_dic contains t
+ he probability of being methylated for each CG for each reads mapped to each CPG islands: the sequences covering the CpG islands are called 'ON' and the sequences not covering CPG islands of the reads are called "OFF". So I define for each reads 'ON' and 'OFF' stretch and get the CmG probability for these 'ON' /'OFF' sections of each CpG islands. 
+Script at ~/rds/rds-rd109-durbin-group/projects/cichlid/ONT_Basecall/Hubert_OtoArg_fin_L12_2020-03-16/
+
+Submit process_CPG_output.py script
+for i in `ls | grep Thresholdchr`; do ./process_CpG.py $i >> summary_process ; done
+This script generates, in the process_CPG_output directory, two files per chromosome containing the CPG islands name, medium and median probability values for which the mean probability is higher "IN" (i.e. in sequences covering the CpG islands) than "OUT" and vice-versa, respectively. The summary_process file contains the summary for each chromosome.
+Script at ~/rds/rds-rd109-durbin-group/projects/cichlid/ONT_Basecall/Hubert_OtoArg_fin_L12_2020-03-16/
+
+Get the gene features
+From the gff per chromosome located at ~/rds/rds-rd109-durbin-group/ref/fish/Astatotilapia_calliptera/fAstCal1.2/gff3/Astatotilapia_calliptera.fAstCal1.2.99.primary_assembly.*.gff3.gz
+
+for i in {1..20} 22 23; do zless ~/rds/rds-rd109-durbin-group/ref/fish/Astatotilapia_calliptera/fAstCal1.2/gff3/"Astatotilapia_calliptera.fAstCal1.2.99.primary_assembly."$i".gff3.gz" |  grep ensembl | grep -v 'ensembl\sexon' | awk -F'\t' '{print $3, $9, $7, $4, $5}' > 'chromosome'$i'_features' ; done
+[note that the ensembl gffs have features labelled 'V_gene' and 'J_gene'. They should be replace by 'mRNA' in the chromosome*_features files]
+
+output example (format :gene name strand start end):
+gene ID=gene:ENSACLG00000020174;biotype=protein_coding;description=laminin subunit beta-4-like [Source:NCBI gene%3BAcc:113024978];gene_id=ENSACLG00000020174;logic_name=ensembl;version=1 + 33787 108398
+mRNA ID=transcript:ENSACLT00000030475;Parent=gene:ENSACLG00000020174;biotype=protein_coding;transcript_id=ENSACLT00000030475;version=1 + 33787 108398
+five_prime_UTR Parent=transcript:ENSACLT00000030475 + 33787 33842
+CDS <E2><80><A6>
+
+Submit processing of gene_features
+for i in {1..20} 22 23; do ./process_gene_features6.py gene_features/"chromosome"$i"_features" >gene_features/"chromosome"$i"_log"; done
+This script extracts for each chromosome the number, proportion with CpG islands, mean/median probability and the number with probability > 191/255 for each feature considered (promoter, 5' UTR, coding regions, 3' UTR, end of genes and between genes).
+The log files contains the information in a more detailed format.
+It will also write the id and probabilities of the features having high probability (>191/255) into the gene_features/High_prob directory.
+Script at ~/rds/rds-rd109-durbin-group/projects/cichlid/ONT_Basecall/Hubert_OtoArg_fin_L12_2020-03-16/
