@@ -78,7 +78,7 @@ def get_reads_per_feature(feature_dic, mod_dic, pos_dic, CpG_dic):
    '''
    prob_res={}
    #the line below is only used for testing
-   feature_dic={'5gene': {'ENSACLG00000020698': [[32873740, 32874604], []], 'ENSACLG00000008971': [[23856159, 23856667], ['CpG1541']]}, '3gene': {'ENSACLG00000006950': [[4463837, 4477631], ['CpG404','CpG403']]}, '5mRNA': {'ENSACLT00000000003': [[78636, 80433], []], 'ENSACLT00000000010': [[155986, 162214], ['CpG18', 'CpG19']]}, '3mRNA': {'ENSACLT00000015888': [[6373039, 6375498], []]}, 'CDS': {'ENSACLP00000000002': [[19687, 21573], ['CpG5']], 'ENSACLP00000000003': [[79235, 80433], ['CpG10']]}, 'between': {1:[[21631, 78636], ['CpG8', 'CpG9', 'CpG6', 'CpG7']], 2:[[83577, 85876], ['CpG11']]}}
+   #feature_dic={'5gene': {'ENSACLG00000020698': [[32873740, 32874604], []], 'ENSACLG00000008971': [[23856159, 23856667], ['CpG1541']]}, '3gene': {'ENSACLG00000006950': [[4463837, 4477631], ['CpG404','CpG403']]}, '5mRNA': {'ENSACLT00000000003': [[78636, 80433], []], 'ENSACLT00000000010': [[155986, 162214], ['CpG18', 'CpG19']]}, '3mRNA': {'ENSACLT00000015888': [[6373039, 6375498], []]}, 'CDS': {'ENSACLP00000000002': [[19687, 21573], ['CpG5']], 'ENSACLP00000000003': [[79235, 80433], ['CpG10']]}, 'between': {1:[[21631, 78636], ['CpG8', 'CpG9', 'CpG6', 'CpG7']], 2:[[83577, 85876], ['CpG11']]}}
    bamfile = pysam.AlignmentFile("/home/had38/rds/rds-rd109-durbin-group/projects/cichlid/ONT_Basecall/Hubert_OtoArg_fin_L12_2020-03-16/Align_PASS/fastq_mapping_sorted.bam", "rb")
    for feat in feature_dic:
       if feat not in prob_res:
@@ -147,6 +147,7 @@ def get_reads_per_feature(feature_dic, mod_dic, pos_dic, CpG_dic):
                prob_res[feat][entry][seq_name]['inCpG']=[[],0]
                prob_res[feat][entry][seq_name]['noCpG']=[[],0]
          prob_res[feat][entry]['length']=end - start
+         prob_res[feat][entry]['start']=start
    return prob_res
 
 def parse_mod():
@@ -232,6 +233,8 @@ def summary_prob(results_dic):
           for read in results_dic[feat][entry]:
              if read == 'length':
                 summary_entry[feat]['length']=results_dic[feat][entry]['length']
+             elif read == 'start':
+                summary_entry[feat]['start']=results_dic[feat][entry]['start']
              else:
                 if len(results_dic[feat][entry][read]['noCpG'][0]) > 0:
                    count_CG_noCpG += len(results_dic[feat][entry][read]['noCpG'][0])
@@ -241,8 +244,9 @@ def summary_prob(results_dic):
                    count_CG_inCpG += len(results_dic[feat][entry][read]['inCpG'][0])
                    sum_prob_inCpG += sum(results_dic[feat][entry][read]['inCpG'][0])
                    len_inCpG+= results_dic[feat][entry][read]['inCpG'][1]
-          feature_entry[feat][entry]['noCpG']=[sum_prob_noCpG/len(results_dic[feat][entry]), count_CG_noCpG /len(results_dic[feat][entry]), len_noCpG/len(results_dic[feat][entry])]
-          feature_entry[feat][entry]['inCpG']=[sum_prob_inCpG/len(results_dic[feat][entry]), count_CG_inCpG/len(results_dic[feat][entry]), len_inCpG/len(results_dic[feat][entry])]
+          feature_entry[feat][entry]['noCpG']=[sum_prob_noCpG/(len(results_dic[feat][entry])-2), count_CG_noCpG /(len(results_dic[feat][entry])-2), len_noCpG/(len(results_dic[feat][entry])-2)]
+          feature_entry[feat][entry]['inCpG']=[sum_prob_inCpG/(len(results_dic[feat][entry])-2), count_CG_inCpG/(len(results_dic[feat][entry])-2), len_inCpG/(len(results_dic[feat][entry])-2)]
+          feature_entry[feat][entry]['start']=results_dic[feat][entry]['start']
        #return average probability per feature
        summary_entry[feat]['noCpG']=[sum([feature_entry[feat][x]['noCpG'][0] for x in feature_entry[feat]]) / len(feature_entry[feat]), sum([feature_entry[feat][x]['noCpG'][1] for x in feature_entry[feat]])/len(feature_entry[feat]), sum([feature_entry[feat][x]['noCpG'][2] for x in feature_entry[feat]])/len(feature_entry[feat])]
        summary_entry[feat]['inCpG']=[sum([feature_entry[feat][x]['inCpG'][0] for x in feature_entry[feat]]) / len(feature_entry[feat]), sum([feature_entry[feat][x]['inCpG'][1] for x in feature_entry[feat]])/len(feature_entry[feat]), sum([feature_entry[feat][x]['inCpG'][2] for x in feature_entry[feat]])/len(feature_entry[feat])]
@@ -283,10 +287,11 @@ feature_eq={'5gene':'PROMOTER', '3gene':'END GENE', 'CDS': 'CODING REGIONS', '5m
 #outputH=open("gene_features/High_prob/CpG_feature_"+prefix+"_results", "w")
 for feat in feature_order:
     #outputH.write(feature_eq[feat]+"\n")
-    print(feature_eq[feat])
-    print(feature_results[feat])
-    print([[x, feature_results[feat][x]['inCpG'][0]/feature_results[feat][x]['inCpG'][1]] for x in feature_results[feat] if int(feature_results[feat][x]['inCpG'][1]) > 0])
-    print([[x, feature_results[feat][x]['noCpG'][0]/feature_results[feat][x]['noCpG'][1]] for x in feature_results[feat] if int(feature_results[feat][x]['noCpG'][1]) > 0])
+    #to ensure data are ordered by location on chromosome
+    list_per_feat=[[feature_results[feat][x]['start'],x] for x in feature_results[feat]]
+    sorted_list_per_feat=[x[1] for x in sorted(list_per_feat)]
+    print([[x, feature_results[feat][x]['inCpG'][0]/feature_results[feat][x]['inCpG'][1]] for x in sorted_list_per_feat if int(feature_results[feat][x]['inCpG'][1]) > 0])
+    print([[x, feature_results[feat][x]['noCpG'][0]/feature_results[feat][x]['noCpG'][1]] for x in sorted_list_per_feat if int(feature_results[feat][x]['noCpG'][1]) > 0])
     #list_CpG_high =[x for x in feature_results[feat] if feature_results[feat][x]['inCpG'][1] > 0 and feature_results[feat][x]['inCpG'][0]/feature_results[feat][x]['inCpG'][1] > 191]
     #print(list_CpG_high)
     #outputH.write(str(High_prob[feat])+"\n")
