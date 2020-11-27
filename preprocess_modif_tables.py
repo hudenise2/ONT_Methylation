@@ -9,7 +9,8 @@ import random
 from Bio import SeqIO
 
 
-logging.basicConfig(filename='proc_e',  level=logging.DEBUG)
+logging.basicConfig(filename='preproc.log',  level=logging.DEBUG)
+
 
 def open_fastq(fastq):
     pos_dic={}
@@ -42,7 +43,7 @@ fastq=sys.argv[1]
 prefix=fastq.split("_")[1]
 pos_dic=open_fastq(fastq)
 mod_dic=open_modif(prefix, pos_dic)
-outfile=open("modif_tables/Preprocessed_Table_mod2_"+prefix+"_PASS", "w")
+outfile=open("modif_tables/Preprocessed_Table_mod_"+prefix+"_PASS", "w")
 for entry in mod_dic:
    outfile.write(">"+entry+"\n")
    outfile.write(str(mod_dic[entry])[1:-1]+"\n")
