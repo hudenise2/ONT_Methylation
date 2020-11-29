@@ -181,6 +181,7 @@ def get_reads_per_feature(feature_dic, mod_dic, pos_dic, CpG_dic):
                  noCpG_CG_index=[x for x in range(len(CG_pos)) if x not in CpG_allCG_index] 
                  prob_res[feat][entry][seq_name]['noCpG']=[[prob[x] for x in noCpG_CG_index]]
                  prob_res[feat][entry][seq_name]['noCpG'].append(read_length - prob_res[feat][entry][seq_name]['inCpG'][1])
+                 if 'inCpG' not in prob_res[feat][entry][seq_name]: prob_res[feat][entry][seq_name]['inCpG']=[[],0]
                else: 
                  prob_res[feat][entry][seq_name]['noCpG']=[prob]
                  prob_res[feat][entry][seq_name]['noCpG'].append(read_length)
@@ -290,8 +291,12 @@ def summary_prob(results_dic):
                    count_CG_inCpG += len(results_dic[feat][entry][read]['inCpG'][0])
                    sum_prob_inCpG += sum(results_dic[feat][entry][read]['inCpG'][0])
                    len_inCpG+= results_dic[feat][entry][read]['inCpG'][1]
-          feature_entry[feat][entry]['noCpG']=[sum_prob_noCpG/(len(results_dic[feat][entry])-2), count_CG_noCpG /(len(results_dic[feat][entry])-2), len_noCpG/(len(results_dic[feat][entry])-2)]
-          feature_entry[feat][entry]['inCpG']=[sum_prob_inCpG/(len(results_dic[feat][entry])-2), count_CG_inCpG/(len(results_dic[feat][entry])-2), len_inCpG/(len(results_dic[feat][entry])-2)]
+          if len(results_dic[feat][entry]) > 2:
+             feature_entry[feat][entry]['noCpG']=[sum_prob_noCpG/(len(results_dic[feat][entry])-2), count_CG_noCpG /(len(results_dic[feat][entry])-2), len_noCpG/(len(results_dic[feat][entry])-2)]
+             feature_entry[feat][entry]['inCpG']=[sum_prob_inCpG/(len(results_dic[feat][entry])-2), count_CG_inCpG/(len(results_dic[feat][entry])-2), len_inCpG/(len(results_dic[feat][entry])-2)]
+          else:
+             feature_entry[feat][entry]['noCpG']=[0, 0, 0]
+             feature_entry[feat][entry]['inCpG']=[0, 0, 0]
           feature_entry[feat][entry]['start']=results_dic[feat][entry]['start']
           feature_entry[feat][entry]['length']=results_dic[feat][entry]['length']
        if 'length' in summary_entry[feat]:
@@ -369,8 +374,10 @@ for feat in feature_order:
         output.write(featname+"\t"+str(lengthf)+"\t"+str(round(feature_results[feat][featname]['noCpG'][0],1))+"\t"+str(round(feature_results[feat][featname]['noCpG'][1],1))+"\t" + \
         str(round(feature_results[feat][featname]['noCpG'][2],1))+"\t"+str(round(feature_results[feat][featname]['inCpG'][0],1))+"\t" + \
         str(round(feature_results[feat][featname]['inCpG'][1],1))+"\t" + str(round(feature_results[feat][featname]['inCpG'][2],1))+"\n")
-        cm_noCpG=round(lengthf*(feature_results[feat][featname]['noCpG'][0]/feature_results[feat][featname]['noCpG'][2]),1)
+        cm_noCpG=0
         cm_inCpG=0
+        if feature_results[feat][featname]['inCpG'][2] > 0:
+            cm_noCpG=round(lengthf*(feature_results[feat][featname]['noCpG'][0]/feature_results[feat][featname]['noCpG'][2]),1)
         if feature_results[feat][featname]['inCpG'][2] > 0: 
             cm_inCpG =round(lengthf*(feature_results[feat][featname]['inCpG'][0]/feature_results[feat][featname]['inCpG'][2]),1)
         cm_all=round((cm_noCpG+cm_inCpG)/2,1)
