@@ -376,7 +376,7 @@ for feat in feature_order:
         str(round(feature_results[feat][featname]['inCpG'][1],1))+"\t" + str(round(feature_results[feat][featname]['inCpG'][2],1))+"\n")
         cm_noCpG=0
         cm_inCpG=0
-        if feature_results[feat][featname]['inCpG'][2] > 0:
+        if feature_results[feat][featname]['noCpG'][2] > 0:
             cm_noCpG=round(lengthf*(feature_results[feat][featname]['noCpG'][0]/feature_results[feat][featname]['noCpG'][2]),1)
         if feature_results[feat][featname]['inCpG'][2] > 0: 
             cm_inCpG =round(lengthf*(feature_results[feat][featname]['inCpG'][0]/feature_results[feat][featname]['inCpG'][2]),1)
